@@ -88,7 +88,13 @@ void GetShaderFromFile(OptixDeviceContext context,
         nvrtc_compiler_flag_list.push_back(nvrtc_flags[i]);
     }
 
-    // runtime compile CU to PTX with NVRTC
+    // Emit OptiX-IR rather than PTX. On Blackwell / RTX 50-series GPUs (sm_120) the driver's
+    // OptiX PTX compiler aborts inside optixModuleCreate; OptiX-IR is the robust input path and
+    // is accepted on all OptiX 7.5+ setups. (NVIDIA OptiX forum: "PTX case infinite waiting,
+    // OptixIR works flawless".)
+    nvrtc_compiler_flag_list.push_back("--optix-ir");
+
+    // runtime compile CU to OptiX-IR with NVRTC
     const nvrtcResult compile_result =
         nvrtcCompileProgram(nvrtc_program, (int)nvrtc_compiler_flag_list.size(), nvrtc_compiler_flag_list.data());
 
@@ -104,11 +110,13 @@ void GetShaderFromFile(OptixDeviceContext context,
                                  "\n" + nvrt_compilation_log);
     }
 
+    // Retrieve the OptiX-IR (binary). optixModuleCreate auto-detects PTX vs OptiX-IR from the
+    // buffer, so the downstream call is unchanged; the size is passed explicitly below.
     std::string ptx;
     size_t ptx_size = 0;
-    NVRTC_ERROR_CHECK(nvrtcGetPTXSize(nvrtc_program, &ptx_size));
+    NVRTC_ERROR_CHECK(nvrtcGetOptiXIRSize(nvrtc_program, &ptx_size));
     ptx.resize(ptx_size);
-    NVRTC_ERROR_CHECK(nvrtcGetPTX(nvrtc_program, &ptx[0]));
+    NVRTC_ERROR_CHECK(nvrtcGetOptiXIR(nvrtc_program, &ptx[0]));
 
     // std::chrono::high_resolution_clock::time_point end_compile = std::chrono::high_resolution_clock::now();
 
